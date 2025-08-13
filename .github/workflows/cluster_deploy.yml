@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-push:
+  create_infra:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -26,11 +26,6 @@ jobs:
         with:
           version: v1.33.0
 
-      - name: Install helm
-        uses: azure/setup-helm@v4.3.0
-        with:
-          version: 3.18.4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -40,15 +35,6 @@ jobs:
           role-to-assume: arn:aws:iam::038462790533:role/TerraformRole
           role-session-name: GitHubActionsSession
           role-skip-session-tagging: true
-
-      - name: Configure SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
-
-      - name: Helm lint
-        run: helm lint
-        working-directory: ./python-chart
 
       - name: Get runner IP address
         id: ip
@@ -73,6 +59,35 @@ jobs:
           github.ref == 'refs/heads/feature/workflow' && steps.plan.outcome == 'success' &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: terraform apply -auto-approve plan.tfplan
+
+      - name: Save kubeconfig as secret
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y gh
+          echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
+          KUBE_CONFIG=$(cat kubeconfig)
+          gh secret set KUBE_CONFIG --body "$KUBE_CONFIG"
+
+  deploy_app:
+    runs-on: ubuntu-latest
+    needs: create_infra
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install helm
+        uses: azure/setup-helm@v4.3.0
+        with:
+          version: 3.18.4
+
+      - name: Download kubeconfig
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/kubeconfig
+
+      - name: Helm lint
+        run: helm lint
+        working-directory: ./python-chart
 
       - name: Deploy Helm chart
         run: export KUBECONFIG=./kubeconfig && helm upgrade --install python-chart ./python-chart
