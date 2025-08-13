@@ -16,6 +16,5 @@ wheels/
 .terraform.lock.hcl
 *.pem
 kubeconfig
-terraform.tfvars
 kube-ssh-key
 override.yaml

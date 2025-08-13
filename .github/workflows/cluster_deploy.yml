@@ -1,0 +1,79 @@
+name: Kubernetes deployment
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/workflow
+
+env:
+  ECR_REPOSITORY: python-repo
+  TF_VAR_aws_region: eu-central-1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.33.0
+
+      - name: Install helm
+        uses: azure/setup-helm@v4.3.0
+        with:
+          version: 3.18.4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.TF_VAR_aws_region }}
+          role-to-assume: arn:aws:iam::038462790533:role/TerraformRole
+          role-session-name: GitHubActionsSession
+          role-skip-session-tagging: true
+
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Helm lint
+        run: helm lint
+        working-directory: ./python-chart
+
+      - name: Get runner IP address
+        id: ip
+        uses: haythem/public-ip@v1.3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -var="allowed_ip=${{ steps.ip.outputs.ipv4 }}" -var="aws_account=${{ secrets.AWS_ACCOUNT_ID }}" -no-color -out=plan.tfplan
+        continue-on-error: true
+
+      - name: Terraform Apply
+        if: |
+          github.ref == 'refs/heads/feature/workflow' && steps.plan.outcome == 'success' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: terraform apply -auto-approve plan.tfplan
+
+      - name: Deploy Helm chart
+        run: export KUBECONFIG=./kubeconfig && helm upgrade --install python-chart ./python-chart
+

@@ -91,9 +91,9 @@ resource "null_resource" "install_master" {
     command = "export KUBECONFIG=./kubeconfig && kubectl create secret docker-registry ecr-cred --docker-server=${var.aws_account}.dkr.ecr.${var.aws_region}.amazonaws.com --docker-username=AWS --docker-password=$(aws ecr get-login-password)"
   }
 
-  provisioner "local-exec" {
-    command = "export KUBECONFIG=./kubeconfig && helm upgrade --install python-chart ./python-chart"
-  }
+  # provisioner "local-exec" {
+  #   command = "export KUBECONFIG=./kubeconfig && helm upgrade --install python-chart ./python-chart"
+  # }
 }
 
 data "aws_route53_zone" "my_zone" {
