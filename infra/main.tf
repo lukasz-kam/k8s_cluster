@@ -76,25 +76,30 @@ resource "null_resource" "get_k3s_token" {
   }
 }
 
-resource "null_resource" "install_master" {
+resource "null_resource" "kubeconfig_download" {
   depends_on = [null_resource.get_k3s_token, aws_instance.k3s_worker]
+
+  triggers = {
+    always_run = timestamp()
+  }
+
+  provisioner "local-exec" {
+    command = "rm -f ./kubeconfig && scp -i ${var.key_filename} -o StrictHostKeyChecking=no ec2-user@${aws_instance.k3s_master.public_ip}:/etc/rancher/k3s/k3s.yaml ./kubeconfig && sed -i 's/127.0.0.1/${aws_instance.k3s_master.public_ip}/g' ./kubeconfig"
+  }
+}
+
+resource "null_resource" "install_master" {
+  depends_on = [null_resource.kubeconfig_download, aws_instance.k3s_worker]
 
   triggers = {
     master_ip = aws_instance.k3s_master.public_ip
   }
 
   provisioner "local-exec" {
-    command = "rm -f ./kubeconfig && scp -i ${var.key_filename} -o StrictHostKeyChecking=no ec2-user@${aws_instance.k3s_master.public_ip}:/etc/rancher/k3s/k3s.yaml ./kubeconfig && sed -i 's/127.0.0.1/${aws_instance.k3s_master.public_ip}/g' ./kubeconfig"
-  }
-
-  provisioner "local-exec" {
     command = "export KUBECONFIG=./kubeconfig && kubectl create secret docker-registry ecr-cred --docker-server=${var.aws_account}.dkr.ecr.${var.aws_region}.amazonaws.com --docker-username=AWS --docker-password=$(aws ecr get-login-password)"
   }
-
-  # provisioner "local-exec" {
-  #   command = "export KUBECONFIG=./kubeconfig && helm upgrade --install python-chart ./python-chart"
-  # }
 }
+
 
 data "aws_route53_zone" "my_zone" {
   name         = var.domain_name

@@ -27,7 +27,7 @@ variable "subnet_az_a" {
 
   validation {
     condition     = can(regex("^[a-z]{2}-[a-z]+-[0-9]{1,2}[a-z]$", var.subnet_az_a))
-    error_message = "The Availability Zone (AZ) must be in a valid AWS format (e.g., 'us-east-1a', 'eu-central-1b'). It should start with a region prefix and end with a lowercase letter."
+    error_message = "The Availability Zone (AZ) must be in a valid AWS format (e.g., 'us-east-1a' or 'eu-central-1b'). It should start with a region prefix and end with a lowercase letter."
   }
 }
 

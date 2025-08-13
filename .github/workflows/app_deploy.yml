@@ -24,19 +24,16 @@ jobs:
         with:
           version: 3.18.4
 
-      - name: Download kubeconfig
-        run: |
-          echo "${KUBE_CONFIG}" > ~/kubeconfig
-        env:
-          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-
       - name: Helm lint
         run: helm lint
         working-directory: ./python-chart
 
-      - name: Cat kubeconfig
-        run: cat ~/kubeconfig
+      - name: Set Kubeconfig Context
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
 
       - name: Deploy Helm chart
-        run: export KUBECONFIG=./kubeconfig && helm upgrade --install python-chart ./python-chart
+        run: helm upgrade --install python-chart ./python-chart
 
