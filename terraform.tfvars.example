@@ -1,4 +1,4 @@
-ssh_access_enabled   =
 allowed_ip           =
 instance_type_master =
 domain_name =
+aws_account =

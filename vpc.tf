@@ -49,6 +49,27 @@ resource "aws_security_group" "k3s_master" {
   vpc_id = aws_vpc.main.id
 
   ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["${var.allowed_ip}/32"]
+  }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     from_port   = 6443
     to_port     = 6443
     protocol    = "tcp"
@@ -63,10 +84,10 @@ resource "aws_security_group" "k3s_master" {
   }
 
   ingress {
-    from_port = 8472
-    to_port   = 8472
-    protocol  = "udp"
-    self      = true
+    from_port   = 8472
+    to_port     = 8472
+    protocol    = "udp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
   }
 
   egress {
@@ -81,6 +102,27 @@ resource "aws_security_group" "k3s_worker" {
   vpc_id = aws_vpc.main.id
 
   ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["${var.allowed_ip}/32"]
+  }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
     from_port   = 10250
     to_port     = 10250
     protocol    = "tcp"
@@ -88,10 +130,10 @@ resource "aws_security_group" "k3s_worker" {
   }
 
   ingress {
-    from_port = 8472
-    to_port   = 8472
-    protocol  = "udp"
-    self      = true
+    from_port   = 8472
+    to_port     = 8472
+    protocol    = "udp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
   }
 
   egress {
@@ -100,15 +142,4 @@ resource "aws_security_group" "k3s_worker" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-}
-
-resource "aws_security_group_rule" "ssh_ingress_rule" {
-  count = var.ssh_access_enabled ? 1 : 0
-
-  type              = "ingress"
-  from_port         = 22
-  to_port           = 22
-  protocol          = "tcp"
-  cidr_blocks       = ["${var.allowed_ip}/32"]
-  security_group_id = aws_security_group.k3s_master.id
 }

@@ -91,3 +91,8 @@ variable "key_filename" {
   type        = string
   default     = "kube-ssh-key"
 }
+
+variable "aws_account" {
+  description = "ID of the AWS account."
+  type        = string
+}

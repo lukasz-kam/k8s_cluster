@@ -1,0 +1,10 @@
+image:
+  repository: "038462790533.dkr.ecr.eu-central-1.amazonaws.com/python-repo"
+  tag: "84a102b33490aa0792e28ac9843f214b36468685"
+
+service:
+  port: 8000
+
+ingress:
+  enabled: true
+  host: "app.lucasops.online"

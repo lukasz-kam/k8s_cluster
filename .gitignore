@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+*.pem
+kubeconfig
+terraform.tfvars
+kube-ssh-key
+override.yaml
