@@ -56,7 +56,7 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -var="allowed_ip=${{ steps.ip.outputs.ipv4 }}" -var="aws_account=${{ secrets.AWS_ACCOUNT_ID }}" -no-color -out=plan.tfplan
+        run: terraform plan -var="allowed_ip=${{ steps.ip.outputs.ipv4 }}" -var="aws_account=${{ secrets.AWS_ACCOUNT_ID }}" -var="my_ssh_key=${{ secrets.MY_SSH_KEY }}" -no-color -out=plan.tfplan
         continue-on-error: true
 
       - name: Terraform Apply
@@ -64,9 +64,6 @@ jobs:
           github.ref == 'refs/heads/main' && steps.plan.outcome == 'success' &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: terraform apply -auto-approve plan.tfplan
-
-      - name: Cat kubeconfig
-        run: cat kubeconfig
 
       - name: Save kubeconfig as secret
         env:
@@ -76,3 +73,49 @@ jobs:
           echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
           KUBE_CONFIG=$(cat kubeconfig)
           gh secret set KUBE_CONFIG --body "$KUBE_CONFIG"
+
+  deploy_monitoring:
+    needs: create_infra
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/monitoring/
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.TF_VAR_aws_region }}
+          role-to-assume: arn:aws:iam::038462790533:role/TerraformRole
+          role-session-name: GitHubActionsSession
+          role-skip-session-tagging: true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+
+      - name: Set Kubeconfig Context
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -var="grafana_admin_password=${{ secrets.GRAFANA_PASS }}" -var="domain=${{ secrets.DOMAIN_NAME }}" -var="config_path=${{ env.KUBECONFIG }}" -no-color -out=plan.tfplan
+        continue-on-error: true
+
+      - name: Terraform Apply
+        if: |
+          github.ref == 'refs/heads/main' && steps.plan.outcome == 'success' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: terraform apply -auto-approve plan.tfplan

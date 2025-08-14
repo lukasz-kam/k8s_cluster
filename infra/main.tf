@@ -11,9 +11,16 @@ resource "aws_instance" "k3s_master" {
 
   user_data = <<-EOF
     #!/bin/bash
+
     TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
     PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
     PUBLIC_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+
+    mkdir -p /home/ec2-user/.ssh
+    chmod 700 /home/ec2-user/.ssh
+    echo "${var.my_ssh_key}" >> /home/ec2-user/.ssh/authorized_keys
+    chmod 600 /home/ec2-user/.ssh/authorized_keys
+    chown -R ec2-user:ec2-user /home/ec2-user/.ssh
 
     if [ -z "$PRIVATE_IP" ] || [ -z "$PUBLIC_IP" ]; then
       echo "Failed to retrieve IP addresses from metadata. Exiting." >&2

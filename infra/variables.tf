@@ -96,3 +96,7 @@ variable "aws_account" {
   description = "ID of the AWS account."
   type        = string
 }
+
+variable "my_ssh_key" {
+  type = string
+}
