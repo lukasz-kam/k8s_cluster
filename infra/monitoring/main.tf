@@ -26,3 +26,16 @@ resource "helm_release" "grafana" {
     })
   ]
 }
+
+resource "kubernetes_config_map" "grafana_memory_dashboard" {
+  metadata {
+    name      = "memory-usage-dashboard"
+    namespace = "monitoring"
+    labels = {
+      grafana_dashboard = "1"
+    }
+  }
+  data = {
+    "memory-usage.json" = file("${path.module}/dashboards/memory-usage-dashboard.json")
+  }
+}
