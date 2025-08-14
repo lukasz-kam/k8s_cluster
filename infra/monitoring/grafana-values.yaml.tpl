@@ -10,3 +10,16 @@ datasources:
 
 adminUser: admin
 adminPassword: "${admin_password}"
+
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - "${domain}"
+  path: /grafana
+  pathType: Prefix
+
+grafana.ini:
+  server:
+    root_url: "http://${domain}/grafana/"
+    serve_from_sub_path: true
