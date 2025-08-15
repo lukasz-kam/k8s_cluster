@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - feature/rbac
     paths:
       - 'infra/**'
 
@@ -61,7 +61,7 @@ jobs:
 
       - name: Terraform Apply
         if: |
-          github.ref == 'refs/heads/main' && steps.plan.outcome == 'success' &&
+          github.ref == 'refs/heads/feature/rbac' && steps.plan.outcome == 'success' &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: terraform apply -auto-approve plan.tfplan
 
@@ -116,6 +116,6 @@ jobs:
 
       - name: Terraform Apply
         if: |
-          github.ref == 'refs/heads/main' && steps.plan.outcome == 'success' &&
+          github.ref == 'refs/heads/feature/rbac' && steps.plan.outcome == 'success' &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: terraform apply -auto-approve plan.tfplan

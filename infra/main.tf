@@ -4,6 +4,7 @@ resource "aws_instance" "k3s_master" {
   key_name               = aws_key_pair.my_key_pair.key_name
   vpc_security_group_ids = [aws_security_group.k3s_master.id]
   subnet_id              = aws_subnet.public_a.id
+  iam_instance_profile   = aws_iam_instance_profile.k8s_master_profile.name
 
   tags = {
     Name = "k3s-master"
