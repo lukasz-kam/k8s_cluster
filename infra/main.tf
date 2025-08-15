@@ -17,12 +17,6 @@ resource "aws_instance" "k3s_master" {
     PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
     PUBLIC_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
 
-    mkdir -p /home/ec2-user/.ssh
-    chmod 700 /home/ec2-user/.ssh
-    echo "${var.my_ssh_key}" >> /home/ec2-user/.ssh/authorized_keys
-    chmod 600 /home/ec2-user/.ssh/authorized_keys
-    chown -R ec2-user:ec2-user /home/ec2-user/.ssh
-
     if [ -z "$PRIVATE_IP" ] || [ -z "$PUBLIC_IP" ]; then
       echo "Failed to retrieve IP addresses from metadata. Exiting." >&2
       exit 1
@@ -57,29 +51,38 @@ resource "aws_instance" "k3s_worker" {
 resource "null_resource" "get_k3s_token" {
   triggers = {
     master_ip = aws_instance.k3s_master.public_ip
+    instance_id = aws_instance.k3s_master.id
   }
 
   provisioner "local-exec" {
     command = <<-EOF
-      set -e
-      TIMEOUT=300
-      START_TIME=$(date +%s)
       TOKEN_FILE="k3s_token.txt"
 
-      while true; do
-        if (( $(date +%s) - START_TIME > TIMEOUT )); then
-          echo "Timeout: K3s token not found after 5 minutes." >&2
-          exit 1
-        fi
+      for _ in {1..5}; do
+        COMMAND_ID=$(aws ssm send-command \
+          --targets "Key=instanceIds,Values=${self.triggers.instance_id}" \
+          --document-name "AWS-RunShellScript" \
+          --comment "Get K3s token" \
+          --parameters '{"commands":["sudo cat /var/lib/rancher/k3s/server/node-token"]}' \
+          --query "Command.CommandId" \
+          --output text)
 
-        if ssh -o StrictHostKeyChecking=no -i ${var.key_filename} ec2-user@${self.triggers.master_ip} "sudo test -s /var/lib/rancher/k3s/server/node-token"; then
-          ssh -o StrictHostKeyChecking=no -i ${var.key_filename} ec2-user@${self.triggers.master_ip} "sudo cat /var/lib/rancher/k3s/server/node-token" > "$TOKEN_FILE"
+        aws ssm get-command-invocation \
+          --command-id "$COMMAND_ID" \
+          --instance-id "${self.triggers.instance_id}" \
+          --query "StandardOutputContent" \
+          --output text > "$TOKEN_FILE"
+
+        if grep -q '[^[:space:]]' "$TOKEN_FILE"; then
           echo "Token successfully saved to $TOKEN_FILE"
           exit 0
         fi
 
         sleep 5
       done
+
+      echo "Error: TOKEN not found."
+      exit 1
     EOF
   }
 }
@@ -89,22 +92,88 @@ resource "null_resource" "kubeconfig_download" {
 
   triggers = {
     always_run = timestamp()
+    instance_id = aws_instance.k3s_master.id
+    master_ip   = aws_instance.k3s_master.public_ip
   }
 
   provisioner "local-exec" {
-    command = "rm -f ./kubeconfig && scp -i ${var.key_filename} -o StrictHostKeyChecking=no ec2-user@${aws_instance.k3s_master.public_ip}:/etc/rancher/k3s/k3s.yaml ./kubeconfig && sed -i 's/127.0.0.1/${aws_instance.k3s_master.public_ip}/g' ./kubeconfig"
+    command = <<-EOF
+      KUBECONFIG_FILE="kubeconfig"
+
+      for _ in {1..5}; do
+        COMMAND_ID=$(aws ssm send-command \
+          --targets "Key=instanceIds,Values=${self.triggers.instance_id}" \
+          --document-name "AWS-RunShellScript" \
+          --comment "Download kubeconfig" \
+          --parameters '{"commands":["sudo cat /etc/rancher/k3s/k3s.yaml"]}' \
+          --query "Command.CommandId" \
+          --output text)
+
+        aws ssm get-command-invocation \
+          --command-id "$COMMAND_ID" \
+          --instance-id "${self.triggers.instance_id}" \
+          --query "StandardOutputContent" \
+          --output text > $KUBECONFIG_FILE
+
+
+        if grep -q '[^[:space:]]' "$KUBECONFIG_FILE"; then
+          echo "Kubeconfig saved to $KUBECONFIG_FILE"
+          exit 0
+        fi
+
+        echo "Kubeconfig not ready yet, retrying in 5 seconds..."
+        sleep 5
+      done
+
+      echo "Error: KUBECONFIG not found."
+      exit 1
+    EOF
   }
 }
+
 
 resource "null_resource" "install_master" {
   depends_on = [null_resource.kubeconfig_download, aws_instance.k3s_worker]
 
   triggers = {
+    always_run = timestamp()
     master_ip = aws_instance.k3s_master.public_ip
+    instance_id = aws_instance.k3s_master.id
   }
 
   provisioner "local-exec" {
-    command = "export KUBECONFIG=./kubeconfig && kubectl create secret docker-registry ecr-cred --docker-server=${var.aws_account}.dkr.ecr.${var.aws_region}.amazonaws.com --docker-username=AWS --docker-password=$(aws ecr get-login-password)"
+    command = <<EOT
+
+      COMMAND_ID=$(aws ssm send-command \
+        --targets "Key=instanceIds,Values=${self.triggers.instance_id}" \
+        --document-name "AWS-RunShellScript" \
+        --comment "Create ECR secret in K3s" \
+        --parameters '{"commands":["SECRET_PASS=$(aws ecr get-login-password) && kubectl delete secret ecr-cred --ignore-not-found && kubectl create secret docker-registry ecr-cred --docker-server=038462790533.dkr.ecr.eu-central-1.amazonaws.com --docker-username=AWS --docker-password=$SECRET_PASS && kubectl get secret ecr-cred -n default"]}' \
+        --query "Command.CommandId" \
+        --output text)
+
+      i=1
+      while [ $i -le 4 ]; do
+        STATUS=$(aws ssm get-command-invocation \
+          --command-id "$COMMAND_ID" \
+          --instance-id "${self.triggers.instance_id}" \
+          --query "Status" \
+          --output text || echo "Unknown")
+
+        echo "Attempt $i, status=$STATUS"
+
+        if [ "$STATUS" = "Success" ]; then
+          echo "Secret created successfully!"
+          exit 0
+        fi
+
+        i=$((i + 1))
+        sleep 10
+      done
+
+      echo "Command timed out!"
+      exit 1
+    EOT
   }
 }
 
