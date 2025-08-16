@@ -28,6 +28,8 @@ resource "helm_release" "grafana" {
 }
 
 resource "kubernetes_config_map" "grafana_memory_dashboard" {
+  depends_on = [kubernetes_namespace.monitoring]
+
   metadata {
     name      = "memory-usage-dashboard"
     namespace = "monitoring"

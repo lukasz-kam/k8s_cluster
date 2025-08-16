@@ -8,6 +8,9 @@ on:
     paths:
       - 'python-chart/**'
 
+env:
+  TF_VAR_aws_region: eu-central-1
+
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
@@ -24,16 +27,81 @@ jobs:
         with:
           version: 3.18.4
 
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.33.0
+
       - name: Helm lint
         run: helm lint
         working-directory: ./python-chart
 
-      - name: Set Kubeconfig Context
-        uses: azure/k8s-set-context@v3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
         with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+          terraform_version: 1.12.2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.TF_VAR_aws_region }}
+          role-to-assume: arn:aws:iam::038462790533:role/TerraformRole
+          role-session-name: GitHubActionsSession
+          role-skip-session-tagging: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        working-directory: infra/
+
+      - name: Save master ID
+        run: echo "MASTER_ID=$(terraform output -raw master_instance_id)" >> $GITHUB_ENV
+        working-directory: infra/
+
+      - name: Start SSM port forwarding
+        run: |
+          aws ssm start-session \
+            --target $MASTER_ID \
+            --document-name AWS-StartPortForwardingSession \
+            --parameters '{"portNumber":["6443"],"localPortNumber":["6443"]}' &
+          echo $! > ssm_pid.txt
+
+      - name: Wait for Kubernetes API port
+        run: |
+          for i in {1..30}; do
+            if nc -z 127.0.0.1 6443; then
+              echo "K8s API port is ready"
+              exit 0
+            fi
+            echo "Waiting for K8s API on 127.0.0.1:6443..."
+            sleep 5
+          done
+          echo "Error: K8s API not ready in time" >&2
+          exit 1
+
+      - name: Add permissions to run script
+        run: chmod +x ./scripts/get_kubeconfig.sh
+
+      - name: Get kubeconfig from SSM
+        run: ./scripts/get_kubeconfig.sh
+
+      - name: Set env variable
+        run: echo "ECR_PASS=$(aws ecr get-login-password --region eu-central-1)" >> $GITHUB_ENV
+
+      - name: Create ECR secret in Kubernetes
+        run: |
+          kubectl create secret docker-registry ecr-cred \
+            --docker-server=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.TF_VAR_aws_region }}.amazonaws.com \
+            --docker-username=AWS \
+            --docker-password="$ECR_PASS" \
+            --namespace=default \
+            --dry-run=client -o yaml \
+          | kubectl apply -f -
 
       - name: Deploy Helm chart
         run: helm upgrade --install python-chart ./python-chart
 
+      - name: Stop SSM session
+        run: kill $(cat ssm_pid.txt)

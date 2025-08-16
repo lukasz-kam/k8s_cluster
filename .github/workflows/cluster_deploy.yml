@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - feature/rbac
+      - main
     paths:
       - 'infra/**'
 
@@ -25,11 +25,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: v1.33.0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -56,23 +51,24 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -var="allowed_ip=${{ steps.ip.outputs.ipv4 }}" -var="aws_account=${{ secrets.AWS_ACCOUNT_ID }}" -var="my_ssh_key=${{ secrets.MY_SSH_KEY }}" -no-color -out=plan.tfplan
+        run: terraform plan -var="allowed_ip=${{ steps.ip.outputs.ipv4 }}" -var="aws_account=${{ secrets.AWS_ACCOUNT_ID }}" -no-color -out=plan.tfplan
         continue-on-error: true
 
       - name: Terraform Apply
         if: |
-          github.ref == 'refs/heads/feature/rbac' && steps.plan.outcome == 'success' &&
+          github.ref == 'refs/heads/main' && steps.plan.outcome == 'success' &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: terraform apply -auto-approve plan.tfplan
 
-      - name: Save kubeconfig as secret
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-        run: |
-          sudo apt-get update && sudo apt-get install -y gh
-          echo "${{ secrets.GH_PAT }}" | gh auth login --with-token
-          KUBE_CONFIG=$(cat kubeconfig)
-          gh secret set KUBE_CONFIG --body "$KUBE_CONFIG"
+      - name: Save master ID
+        working-directory: infra
+        run: terraform output -raw master_instance_id > master_id.txt
+
+      - name: Upload master ID
+        uses: actions/upload-artifact@v4
+        with:
+          name: master-id
+          path: infra/master_id.txt
 
   deploy_monitoring:
     needs: create_infra
@@ -99,11 +95,42 @@ jobs:
         with:
           terraform_version: 1.12.2
 
-      - name: Set Kubeconfig Context
-        uses: azure/k8s-set-context@v3
+      - name: Download master ID
+        uses: actions/download-artifact@v5
         with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBE_CONFIG }}
+          name: master-id
+          path: temp_master_id
+
+      - name: Set env variable
+        run: echo "MASTER_ID=$(cat $GITHUB_WORKSPACE/temp_master_id/master_id.txt)" >> $GITHUB_ENV
+
+      - name: Add permissions to run script
+        run: chmod +x ../../scripts/get_kubeconfig.sh
+
+      - name: Get kubeconfig from SSM
+        run: ../../scripts/get_kubeconfig.sh
+
+      - name: Start SSM port forwarding
+        run: |
+          aws ssm start-session \
+            --target $MASTER_ID \
+            --document-name AWS-StartPortForwardingSession \
+            --parameters '{"portNumber":["6443"],"localPortNumber":["6443"]}' &
+          echo $! > ssm_pid.txt
+
+      - name: Wait for Kubernetes API port
+        run: |
+          for i in {1..30}; do
+            if nc -z 127.0.0.1 6443; then
+              echo "K8s API port is ready"
+              sleep 5
+              exit 0
+            fi
+            echo "Waiting for K8s API on 127.0.0.1:6443..."
+            sleep 5
+          done
+          echo "Error: K8s API not ready in time" >&2
+          exit 1
 
       - name: Terraform Init
         id: init
@@ -116,6 +143,9 @@ jobs:
 
       - name: Terraform Apply
         if: |
-          github.ref == 'refs/heads/feature/rbac' && steps.plan.outcome == 'success' &&
+          github.ref == 'refs/heads/main' && steps.plan.outcome == 'success' &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: terraform apply -auto-approve plan.tfplan
+
+      - name: Stop SSM session
+        run: kill $(cat ssm_pid.txt)

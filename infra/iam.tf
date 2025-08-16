@@ -15,14 +15,41 @@ resource "aws_iam_role" "k8s_master_role" {
   })
 }
 
-resource "aws_iam_role_policy_attachment" "ec2_ssm_policy" {
+resource "aws_iam_role" "k8s_worker_role" {
+  name = "k8s-worker-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "master_ssm_policy" {
   role       = aws_iam_role.k8s_master_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role_policy_attachment" "worker_ssm_policy" {
+  role       = aws_iam_role.k8s_worker_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_instance_profile" "k8s_master_profile" {
   name = "k8s-master-profile"
   role = aws_iam_role.k8s_master_role.name
+}
+
+resource "aws_iam_instance_profile" "k8s_worker_profile" {
+  name = "k8s-worker-profile"
+  role = aws_iam_role.k8s_worker_role.name
 }
 
 resource "aws_iam_policy" "ec2_ecr_policy" {
@@ -46,4 +73,35 @@ resource "aws_iam_policy" "ec2_ecr_policy" {
 resource "aws_iam_role_policy_attachment" "attach_ec2_ecr_policy" {
   role       = aws_iam_role.k8s_master_role.name
   policy_arn = aws_iam_policy.ec2_ecr_policy.arn
+}
+
+resource "aws_iam_policy" "parameter_store_policy" {
+  name        = "Parameter_Store_Policy"
+  description = "Policy for EC2 to use parameter store."
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:PutParameter",
+          "ssm:GetParameter",
+          "ssm:DescribeParameters",
+          "ssm:DeleteParameter"
+        ]
+        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account}:parameter/k3s/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attach_master_ps_policy" {
+  role       = aws_iam_role.k8s_master_role.name
+  policy_arn = aws_iam_policy.parameter_store_policy.arn
+}
+
+resource "aws_iam_role_policy_attachment" "attach_worker_ps_policy" {
+  role       = aws_iam_role.k8s_worker_role.name
+  policy_arn = aws_iam_policy.parameter_store_policy.arn
 }
