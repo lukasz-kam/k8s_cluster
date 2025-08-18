@@ -105,3 +105,22 @@ resource "aws_iam_role_policy_attachment" "attach_worker_ps_policy" {
   role       = aws_iam_role.k8s_worker_role.name
   policy_arn = aws_iam_policy.parameter_store_policy.arn
 }
+
+resource "aws_iam_policy" "ec2_s3_read" {
+  name = "EC2S3ReadPolicy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = ["${aws_s3_bucket.scripts_bucket.arn}/*"]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attach_s3_read" {
+  role       = aws_iam_role.k8s_master_role.name
+  policy_arn = aws_iam_policy.ec2_s3_read.arn
+}
