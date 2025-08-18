@@ -1,11 +1,10 @@
 variable "grafana_admin_password" {
-  description = "Name of the ssh key file."
+  description = "Password for the grafana admin user."
   type        = string
-  default     = "kube-ssh-key"
 }
 
 variable "domain" {
-  description = "Name of the ssh key file."
+  description = "Domain name for the grafana ingress path."
   type        = string
   default     = "kube-ssh-key"
 }

@@ -1,7 +1,6 @@
 resource "aws_instance" "k3s_master" {
   ami                    = var.ami_id
   instance_type          = var.instance_type_master
-  key_name               = aws_key_pair.my_key_pair.key_name
   vpc_security_group_ids = [aws_security_group.k3s_master.id]
   subnet_id              = aws_subnet.public_a.id
   iam_instance_profile   = aws_iam_instance_profile.k8s_master_profile.name
@@ -16,6 +15,8 @@ resource "aws_instance" "k3s_master" {
     TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
     PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
     PUBLIC_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+
+    aws ssm delete-parameter --name "/k3s/kubeconfig" || true
 
     if [ -z "$PRIVATE_IP" ] || [ -z "$PUBLIC_IP" ]; then
       echo "Failed to retrieve IP addresses from metadata. Exiting." >&2
@@ -35,7 +36,6 @@ resource "aws_instance" "k3s_master" {
       sleep 2
     done
     KUBE_SECRET=$(cat $KUBECONFIG_FILE)
-
 
     aws ssm put-parameter \
       --name "/k3s/kubeconfig" \
@@ -61,7 +61,6 @@ resource "aws_instance" "k3s_worker" {
 
   ami                    = var.ami_id
   instance_type          = var.instance_type_worker
-  key_name               = aws_key_pair.my_key_pair.key_name
   vpc_security_group_ids = [aws_security_group.k3s_worker.id]
   subnet_id              = aws_subnet.public_a.id
   iam_instance_profile   = aws_iam_instance_profile.k8s_worker_profile.name

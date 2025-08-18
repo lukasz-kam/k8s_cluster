@@ -13,6 +13,13 @@ SCRIPT_NAME="new_cluster_user.sh"
 KUBECONFIG_FILE="/tmp/kubeconfig-$CLUSTER_USER.yaml"
 KUBECONFIG_LOCAL="kubeconfig-readonly.yaml"
 
+if aws s3 ls "s3://${S3_BUCKET}/${SCRIPT_NAME}" >/dev/null 2>&1; then
+  echo "Script already exists in bucket: s3://${S3_BUCKET}/${SCRIPT_NAME}"
+else
+  aws s3 cp "${SCRIPT_NAME}" "s3://${S3_BUCKET}/${SCRIPT_NAME}"
+  echo "Script was copied to the bucket."
+fi
+
 [ -f "$KUBECONFIG_LOCAL" ] && rm "$KUBECONFIG_LOCAL"
 
 COMMAND_ID=$(aws ssm send-command \

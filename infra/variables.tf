@@ -9,17 +9,6 @@ variable "aws_region" {
   }
 }
 
-variable "ssh_access_enabled" {
-  description = "Controls whether the SSH ingress rule should be created."
-  type        = bool
-  default     = false
-}
-
-variable "allowed_ip" {
-  description = "The IP address allowed for connections with SSH."
-  type        = string
-}
-
 variable "subnet_az_a" {
   description = "AZ for the public subnet"
   type        = string
@@ -84,12 +73,6 @@ variable "ami_id" {
   description = "AMI id for cluster instances."
   type        = string
   default     = "ami-02363a012ffa4a7b4"
-}
-
-variable "key_filename" {
-  description = "Name of the ssh key file."
-  type        = string
-  default     = "kube-ssh-key"
 }
 
 variable "aws_account" {

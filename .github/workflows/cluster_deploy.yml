@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - feature/rbac
+      - main
     paths:
       - 'infra/**'
 
@@ -36,10 +36,6 @@ jobs:
           role-session-name: GitHubActionsSession
           role-skip-session-tagging: true
 
-      - name: Get runner IP address
-        id: ip
-        uses: haythem/public-ip@v1.3
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -51,12 +47,12 @@ jobs:
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -var="allowed_ip=${{ steps.ip.outputs.ipv4 }}" -var="aws_account=${{ secrets.AWS_ACCOUNT_ID }}" -no-color -out=plan.tfplan
+        run: terraform plan -var="aws_account=${{ secrets.AWS_ACCOUNT_ID }}" -no-color -out=plan.tfplan
         continue-on-error: true
 
       - name: Terraform Apply
         if: |
-          github.ref == 'refs/heads/feature/rbac' && steps.plan.outcome == 'success' &&
+          github.ref == 'refs/heads/main' && steps.plan.outcome == 'success' &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: terraform apply -auto-approve plan.tfplan
 
@@ -143,7 +139,7 @@ jobs:
 
       - name: Terraform Apply
         if: |
-          github.ref == 'refs/heads/feature/rbac' && steps.plan.outcome == 'success' &&
+          github.ref == 'refs/heads/main' && steps.plan.outcome == 'success' &&
           (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: terraform apply -auto-approve plan.tfplan
 

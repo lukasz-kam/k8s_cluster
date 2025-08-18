@@ -49,13 +49,6 @@ resource "aws_security_group" "k3s_master" {
   vpc_id = aws_vpc.main.id
 
   ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["${var.allowed_ip}/32", aws_vpc.main.cidr_block]
-  }
-
-  ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -107,13 +100,6 @@ resource "aws_security_group" "k3s_master" {
 
 resource "aws_security_group" "k3s_worker" {
   vpc_id = aws_vpc.main.id
-
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["${var.allowed_ip}/32"]
-  }
 
   ingress {
     from_port   = 80
