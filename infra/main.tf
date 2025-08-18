@@ -2,57 +2,16 @@ resource "aws_instance" "k3s_master" {
   ami                    = var.ami_id
   instance_type          = var.instance_type_master
   vpc_security_group_ids = [aws_security_group.k3s_master.id]
-  subnet_id              = aws_subnet.public_a.id
+  subnet_id              = aws_subnet.private_a.id
   iam_instance_profile   = aws_iam_instance_profile.k8s_master_profile.name
 
   tags = {
     Name = "k3s-master"
   }
 
-  user_data = <<-EOF
-    #!/bin/bash
-
-    TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`
-    PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
-    PUBLIC_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
-
-    aws ssm delete-parameter --name "/k3s/kubeconfig" || true
-
-    if [ -z "$PRIVATE_IP" ] || [ -z "$PUBLIC_IP" ]; then
-      echo "Failed to retrieve IP addresses from metadata. Exiting." >&2
-      exit 1
-    fi
-
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644 --tls-san $${PUBLIC_IP} --tls-san $${PRIVATE_IP}" sh -
-
-    TOKEN_FILE="/var/lib/rancher/k3s/server/node-token"
-    while [ ! -s "$TOKEN_FILE" ]; do
-      sleep 2
-    done
-    K3S_TOKEN=$(cat $TOKEN_FILE)
-
-    KUBECONFIG_FILE="/etc/rancher/k3s/k3s.yaml"
-    while [ ! -s "$KUBECONFIG_FILE" ]; do
-      sleep 2
-    done
-    KUBE_SECRET=$(cat $KUBECONFIG_FILE)
-
-    aws ssm put-parameter \
-      --name "/k3s/kubeconfig" \
-      --value "$KUBE_SECRET" \
-      --type SecureString \
-      --overwrite \
-      --region ${var.aws_region}
-
-    aws ssm put-parameter \
-      --name "/k3s/token" \
-      --value "$K3S_TOKEN" \
-      --type SecureString \
-      --overwrite \
-      --region ${var.aws_region}
-
-    echo "K3s installation complete."
-  EOF
+  user_data = templatefile("../scripts/master_user_data.sh", {
+    AWS_REGION = var.aws_region
+  })
 }
 
 resource "aws_instance" "k3s_worker" {
@@ -62,7 +21,7 @@ resource "aws_instance" "k3s_worker" {
   ami                    = var.ami_id
   instance_type          = var.instance_type_worker
   vpc_security_group_ids = [aws_security_group.k3s_worker.id]
-  subnet_id              = aws_subnet.public_a.id
+  subnet_id              = aws_subnet.private_b.id
   iam_instance_profile   = aws_iam_instance_profile.k8s_worker_profile.name
 
   tags = {
@@ -99,10 +58,14 @@ data "aws_route53_zone" "my_zone" {
 }
 
 resource "aws_route53_record" "www" {
+  depends_on = [aws_lb.cluster_alb]
   zone_id = data.aws_route53_zone.my_zone.zone_id
   name    = "app.${var.domain_name}"
   type    = "A"
-  ttl     = 300
 
-  records = [aws_instance.k3s_master.public_ip]
+  alias {
+    name                   = aws_lb.cluster_alb.dns_name
+    zone_id                = aws_lb.cluster_alb.zone_id
+    evaluate_target_health = true
+  }
 }

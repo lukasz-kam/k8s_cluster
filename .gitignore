@@ -18,3 +18,4 @@ wheels/
 kubeconfig
 kube-ssh-key
 override.yaml
+scripts/*.yaml

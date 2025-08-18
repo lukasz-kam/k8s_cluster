@@ -48,7 +48,6 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: terraform plan -var="aws_account=${{ secrets.AWS_ACCOUNT_ID }}" -no-color -out=plan.tfplan
-        continue-on-error: true
 
       - name: Terraform Apply
         if: |
@@ -135,7 +134,6 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: terraform plan -var="grafana_admin_password=${{ secrets.GRAFANA_PASS }}" -var="domain=${{ secrets.DOMAIN_NAME }}" -var="config_path=${{ env.KUBECONFIG }}" -no-color -out=plan.tfplan
-        continue-on-error: true
 
       - name: Terraform Apply
         if: |
